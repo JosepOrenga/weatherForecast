@@ -1,0 +1,1101 @@
+---
+title: "Predicción del tiempo atmosférico"
+author: "Josep"
+date: "8/4/2023"
+output: html_document
+---
+
+```{r message= FALSE, warning=FALSE}
+# Carga de la librerias
+if(!require('dplyr')) install.packages('dplyr'); library('dplyr')
+if(!require('tidyverse')) install.packages('tidyverse'); library('tidyverse')
+if (!require('cluster')) install.packages('cluster'); library("cluster")
+if (!require('dbscan')) install.packages('dbscan'); library("dbscan")
+if (!require('C50')) install.packages('C50'); library("C50")
+if(!require('caret')) install.packages('caret'); library('caret')
+if(!require('class')) install.packages('class'); library('class')
+```
+
+**Planteamiento del problema y de los objetivos**
+
+El clima es un fénemeno cambiante y cada vez más dificil de predecir a causa del cambio climático. Sin embargo, la información y las predicciones climáticas sirven como base para la adopción de decisiones en el ámbito de salud pública, gestión del riesgo, agricultura, pesca, gestión del agua, turismo, transporte y energía. Estos sectores necesitan con urgencia información de base científica para planificar sus actividades.
+
+De este modo, el objetivo final de este proyecto de mineria de datos, será construir un modelo capaz de predecir, a partir de una serie de variables si al día siguiente va a llover o no. En este primera parte, se llevará a cabo la elección del conjuto de datos, un analisis inicial, una limpieza, preparación y transformación de estos, para  elabrorar y evaluar el modelo final.
+
+**Metodología de resolución**
+
+ANÁLISIS EXPLORATORIO
+
+Queremos hacer una primera aproximación al conjunto de datos escogido y responderemos a las preguntas más básicas:
+
+- ¿Cuánto registros tiene?
+- ¿Cuántas variables? ¿De qué tipología son?
+- ¿Cómo se distribuyen los valores de las variables?
+- ¿Hay problemas con los datos, por ejemplo, campos vacíos?
+- ¿Puedo intuir ya el valor analítico de los datos?
+- ¿Qué primeras conclusiones puedo extraer?
+- ¿Cómo es la relación entre las variables?
+
+
+PREPARACIÓN DE LOS DATOS
+
+Limpieza
+
+Primero de todo, nos encargaremos de identificar los datos incompletos, redundantes e incorrectos a causa de la transcripción, el contexto y los conceptos de los datos.
+
+- Los valores numéricos perdidos los susutituiremos por la media, moda o eliminaremos, dependiendo de cual sea la mejor decisión para obtener unos datos de calidad.
+- Los valores redundantes los eliminamos.
+
+Transformación de los datos
+
+En segundo lugar, efectuaremos una serie de cambios en nuestros datos para que estos puedan ser procesados correctamente por el modelo, además de mejorar su rendimiento.
+
+- La variable Date, la discretizaremos según el estación climatológica y la denominaremos Season con los valores (Invierno, Verano, Primavera y Otono).
+- La variables categórticas las tranformaremos en numéricas, para poder aplicar el algoritmo PCA.
+- Escalaremos los datos antes de aplicar el algoritmo PCA.
+
+Reducción de dimensionalidad
+
+También es posible que tengamos más registros de los necesarios para conseguir el mismo resultado. En estos casos, lo que se busca es disminuir el número de atributos y registros para reducir el tiempo de ejecución con una calidad de resultados similar.
+
+- Eliminaremos la variable Date y emplearemos la variable Season.
+- Comprobaremos la correlación entre diferentes variables y si encontramos algún par de variables altamente correlacionadas, descartaremos una conservando la otra.
+- En nuestro caso, vamos a aplicar el algoritmo PCA y elegiremos las compenentes principales que tengan un valor propio mayor que 1 siguiendo el método de Kaiser. Pues un valor propio > 1 indica que los PCs representan más varianza de la que representa una de las variables originales de los datos estandarizados.
+
+DESCRIPCIÓN DEL ORIGEN DEL CONJUTO DE DATOS
+
+Se ha seleccionado un conjunto de datos de [kaggle](https://www.kaggle.com/datasets/jsphyg/weather-dataset-rattle-package), donde la fuente de datos es [Australian Governament](http://www.bom.gov.au/climate/dwo/). El dataset contiene alrededor de 10 años de observaciones atmoféricas de diferentes localizaciones en Australia. Estas observaciones han sido tomadas del sistema  Bureau of Meteorology's.La mayoría de los datos se generan y manejan automáticamente. El objetivo analitico es enteder que fenómenos atmoféricos son los más importantes para predicir si al día siguiente lloverá. Este dataset nos permitirá llevar a cabo nuestro objetivo, además se puede aplicar tanto a modelos supervisado, no supervisado y de asociación, ya que contiene la variable dependiente "RainTomorrow", que en los modelos no supervisados deberemos de eliminar.
+
+**ANÁLISIS EXPLORATORIO**
+
+El primer paso para realizar un análisis exploratorio es cargar el fichero de datos.
+
+```{r}
+datos <- read.csv('weatherAUS.csv')
+head(datos)
+```
+
+Verificamos la estructura del juego de datos principal. Vemos el número de columnas que tenemos y ejemplos de los contenidos de las filas.
+
+```{r}
+str(datos)
+```
+Vemos que tenemos **23** variables y **145460** registros
+
+Revisamos la descripción de las variables contenidas en el fichero y si los tipos de variables se corresponden con las que hemos cargado.
+Explicación variables del dataset
+
+- Date -> Fecha de la observación (Categórica)
+- Location -> Nombre de la localización donde se encuentra la estación meteorológica (Categórica)
+- MinTemp -> Temperatura mínima en grados celsius (Numérica)
+- MaxTemp -> Temperatura máxima en grados celsius (Numérica)
+- Rainfall -> Cantidad de lluvia recogida para el día en milímetros (Numérica)
+- Evaporation -> Evaporación de clase A en las 24h recogida a las 9 a.m (Numérica)
+- Sunshine -> Horas de sol en el día (Numérica)
+- WindGustDir -> Dirección de la ráfaga de viento en el día (Categórica)
+- WindGustSpeed -> Velocidad en (km/h) de la ráfaga de viento más rápida (Numérica)
+- WindDir9am -> Dirección del viento a las 9 a.m (Categórica)
+- WindDir3pm -> Dirección del viento a las 3 p.m (Categórica)
+- WindSpeed9am -> Velocidad del viento en (km/h) promediada durante 10 minutos antes de las 9 a.m (Numérica)
+- WindSpeed3pm -> Velocidad del viento en (km/h) promediada durante 10 minutos antes de las 3 p.m (Numérica)
+- Humidity9am -> Porcentaje de humedad a las 9 a.m (Numérica)
+- Humidity3pm -> Porcentaje de humedad a las 3 p.m (Numérica)
+- Pressure9am -> Presión atmoférica en hectopasacales reduciada al nivel medio del mar a las 9 a.m (Numérica)
+- Pressure3pm -> Presión atmoférica en hectopasacales reduciada al nivel medio del mar a las 3 p.m (Numérica)
+- Cloud9am -> Fracción de cielo oscurecida por nubes a las 9 a.m. Esto se mide en "octas", que son una unidad de octavos. Registra cuántos octavos del cielo están oscurecidos por las nubes. Una medida de 0 indica cielo completamente despejado mientras que un 8 indica que está completamente nublado. (Numérica)
+- Cloud3pm -> Fracción de cielo oscurecida por nubes a las 3 p.m. Esto se mide en "octas", que son una unidad de octavos. Registra cuántos octavos del cielo están oscurecidos por las nubes. Una medida de 0 indica cielo completamente despejado mientras que un 8 indica que está completamente nublado. (Numérica)
+- Temp9am -> Temperatura en grados celsius a las 9 a.m (Numérica)
+- Temp3pm -> Temperatura en grados celsius a las 3 p.m (Numérica)
+- RainToday -> YES si la precipitación (mm) en las 24 horas hasta las 9 am excede 1 mm, de lo contrario NO. (Binaria)
+- RainTomorrow -> YES si al dia siguiente llovió, de los contrario NO. (Binaria)
+
+Comprobamos que cumplimos los requistos mínimos a la hora de elegir nuestro dataset:
+
+- Columnas numéricas -> 16
+- Columnas categóricas -> 4
+- Columnas binarias -> 2
+- Registros -> 145460
+
+```{r message= FALSE, warning=FALSE}
+# Carga de la librerias
+if(!require('dplyr')) install.packages('dplyr'); library('dplyr')
+if(!require('tidyverse')) install.packages('tidyverse'); library('tidyverse')
+if (!require('ggplot2')) install.packages('ggplot2'); library('ggplot2')
+if(!require("corrplot")) install.packages("corrplot"); library("corrplot")
+if (!require('factoextra')) install.packages('factoextra'); library('factoextra')
+if (!require('smotefamily')) install.packages('smotefamily'); library('smotefamily')
+```
+
+**PREPROCESAMIENTO Y GESTIÓN DE LAS VARIABLES**
+
+LIMPIEZA
+
+Comprobamos cuantos valores nulos tenemos en cada una de las columnas
+
+```{r}
+datos  %>%
+  summarise_all(list(~is.na(.)))%>%
+  pivot_longer(everything(),
+               names_to = "variables", values_to="missing") %>%
+  count(variables, missing) %>%
+  ggplot(aes(y=variables,x=n,fill=missing))+
+  geom_col(position = "fill")+
+  labs(x="Proportion")+
+  scale_fill_manual(values=c("skyblue3","gold"))+
+  theme(axis.title.y=element_blank())
+```
+
+Observamos que las cuatro columnas tienen una tasa de datos faltantes inferior al 50 %. En lugar de ignorarlos, los incorporaremos a nuestro modelo a través de la imputación adecuada. Para decidir qué metodo usar para sustituir los valores de NaN, extraeremos las características numéricas. Dependiendo de su distribución vamos a reemplazar con mediana o media. Sin embargo, dado que los valores que faltan en estos son bastante grandes, decidimos descartar todos los valores de NaN en lugar de sustituirlos con el método de la moda para evitar el overfitting.
+
+Eliminamos los valores nulos
+
+```{r}
+# Eliminamos los nulos con la función drop_na()
+datos_clean <- datos %>%
+  drop_na()
+
+# Mostramos si tenemos valores nulos
+datos_clean  %>%
+  summarise_all(list(~is.na(.)))%>%
+  pivot_longer(everything(),
+               names_to = "variables", values_to="missing") %>%
+  count(variables, missing) %>%
+  ggplot(aes(y=variables,x=n,fill=missing))+
+  geom_col(position = "fill")+
+  labs(x="Proportion")+
+  scale_fill_manual(values=c("skyblue3","gold"))+
+  theme(axis.title.y=element_blank())
+```
+
+Eliminamos las filas duplicadas
+
+```{r}
+print(dim(datos_clean))
+# Las eliminasmo con la función distinct()
+datos_clean <- datos_clean %>%
+  distinct()
+print(dim(datos_clean))
+```
+Comprobamos que no teníamos ningun valor duplicado
+
+Ya no tenemos valores nulos y los datos esán listos para el análisis de sus distribuciones y relaciones.
+
+**ANÁLISIS DE LAS DISTRIBUCIONES**
+
+Comprobamos las distribuciones de la lluvia (Rainfall), la luz solar (Sunshine), la temperatura a las 3 p. m. (Temp3pm), la temperatura a las 9 a.m. (Temp9pm) y la dirección del viento a las 9 a.m (WindSpeed9am).
+
+```{r}
+summary(datos_clean[c("Rainfall", "Sunshine", "Temp3pm", "Temp9am", "WindSpeed9am")])
+```
+
+**Lluvia**
+
+```{r}
+# Distribución de la lluvia
+hist(datos_clean$Rainfall, main = 'Lluvia(mm)')
+```
+
+La columna 'Rainfall' parece tener un solo pico con el valor de Precipitaciones en '0'. Esto significa que la mayoría de los días en Australia no llueve. Si llueve, es una precipitación muy ligera con un valor medio de 2.13 milímetros de lluvia. La precipitación más intensa registrada en Australia fue de 206,2 milímetros. Aunque la distribución de datos parece incorrecta, esto es normal para los datos recopilados sobre precipitaciones.
+
+Por el t-test, vamos a comprobar si sus medias son siginificativamente diferentes en función de la variable dependiente (RainTomorrow). Podemos aplicar el t-test, ya que al tener mas de 30 registros, por el Teorema del Límite Central podemos asumir que tiene una distribución normal.
+
+```{r}
+t.test(datos_clean$Rainfall ~ datos_clean$RainTomorrow)
+```
+Como el p-value es prácticamente cero, podemos confirmar que las medias son significativamnete diferentes. Por tanto, es posible que esta información sea importante para entender una de las causas de la lluvía.
+
+**Horas de sol**
+
+```{r}
+# Distribución Sunshine
+hist(datos_clean$Sunshine, main = 'Horas de sol')
+```
+
+La columna 'Sunshine' parece tener una distribución bimodal con dos picos. Los picos nos dicen que hay algunos días en Australia en los que no hay sol, como en condiciones de tiempo nublado. Aunque haya un pico en 0 horas de sol, no significa que sea un valor erróneo ya que tiene sentido que haya días con 0 horas de sol. Esto significa que los datos son lo suficientemente fiables.
+
+Por el t-test, vamos a comprobar si sus medias son siginificativamente diferentes en función de la variable dependiente (RainTomorrow). Podemos aplicar el t-test, ya que al tener mas de 30 registros, por el Teorema del Límite Central podemos asumir que tiene una distribución normal.
+
+```{r}
+t.test(datos_clean$Sunshine ~ datos_clean$RainTomorrow)
+```
+Como el p-value es prácticamente cero, podemos confirmar que las medias son significativamnete diferentes. Por tanto, es posible que esta información sea importante para entender una de las causas de la lluvía.
+
+**Temperatura a las 9 a.m (ºC)**
+
+```{r}
+# Desviación típca de la Temperatura a las 9 a.m
+print(sd(datos_clean$Temp9am))
+# Distribución de la Temperatura a las 9 a.m
+hist(datos_clean$Temp9am, main = 'Temperatura a las 9 a.m (ºC)')
+```
+
+La columna 'Temp9am' parece tener una distribución normal sin valores atípicos visibles, esto se puede ver en la curva en forma de campana de nuestro histograma. El valor esperado es de 18 grados con una variación de + o - 6 grados centígrados, esto también es normal para la temperatura a las 9 am en Australia, lo que indica que esta columna no tiene errores visibles.
+
+Por el t-test, vamos a comprobar si sus medias son siginificativamente diferentes en función de la variable dependiente (RainTomorrow). Podemos aplicar el t-test, ya que al tener mas de 30 registros, por el Teorema del Límite Central podemos asumir que tiene una distribución normal.
+
+```{r}
+t.test(datos_clean$Temp9am ~ datos_clean$RainTomorrow)
+```
+
+Como el p-value < 0.05 , podemos confirmar que las medias son significativamnete diferentes. Por tanto, es posible que esta información sea importante para entender una de las causas de la lluvía.
+
+**Temperatura a las 3 p.m (ºC)**
+
+```{r}
+# Desviación típca de la Temperatura a las 3 p.m
+print(sd(datos_clean$Temp3pm))
+# Distribución de la Temperatura a las 9 p.m
+hist(datos_clean$Temp3pm, main = 'Temperatura a las 3 p.m (ºC)')
+```
+
+La columna 'Temp3pm' parece tener una distribución normal sin valores atípicos visibles, esto se puede ver en la curva en forma de campana de nuestro histograma. El valor esperado es de 22 grados con una variación de + o - 6 grados centígrados, la temperatura media es más alta que la de las 9 am puede deberse a que la luz del sol está más presente a las 3 pm, lo que indica que esta columna no tiene errores visibles.
+
+Por el t-test, vamos a comprobar si sus medias son siginificativamente diferentes en función de la variable dependiente (RainTomorrow). Podemos aplicar el t-test, ya que al tener mas de 30 registros, por el Teorema del Límite Central podemos asumir que tiene una distribución normal.
+
+```{r}
+t.test(datos_clean$Temp3pm ~ datos_clean$RainTomorrow)
+```
+
+Como el p-value es prácticamente cero, podemos confirmar que las medias son significativamnete diferentes. Por tanto, es posible que esta información sea importante para entender una de las causas de la lluvía.
+
+**Dirección del viento a las 9 a.m (km/h)**
+
+```{r}
+# Distribución de la Temperatura a las 9 a.m
+hist(datos_clean$WindSpeed9am, main = 'Dirección del viento a las 9 a.m (km/h)')
+```
+
+La columna 'WindSpeed9am' tiene una asimetría positiva (cola a derecha). El valor esperado es de 15 km/h, los valores más altos pueden deberse a las ráfagas de viento, lo que indica que esta columna no tiene errores visibles.
+
+Por el t-test, vamos a comprobar si sus medias son siginificativamente diferentes en función de la variable dependiente (RainTomorrow). Podemos aplicar el t-test, ya que al tener mas de 30 registros, por el Teorema del Límite Central podemos asumir que tiene una distribución normal.
+
+```{r}
+t.test(datos_clean$WindSpeed9am ~ datos_clean$RainTomorrow)
+```
+
+Como el p-value es prácticamente cero, podemos confirmar que las medias son significativamnete diferentes. Por tanto, es posible que esta información sea importante para entender una de las causas de la lluvía.
+
+**Dirección del viento**
+
+Queremos comprobar las proporciones de WindGustDir (datos categóricos)
+
+```{r}
+# Obtenemos el recuento de cada uno de los tipo de viento
+wind_dir <- datos_clean %>%
+  count(WindGustDir)
+
+# Obtenemos el porcentaje de cada tipo de viento
+piepercent<- round(100*wind_dir$n/sum(wind_dir$n), 1)
+
+# Creamos el grafico de sectores
+pie(wind_dir$n, labels = piepercent, main = "Dirección del viento",col = rainbow(length(wind_dir$WindGustDir)))
+legend("topright", c("E","ENE","ESE","N","NE","NNE","NNW","NW","S","SE","SSE","SSW","SW","W","WNW","WSW"), cex = 0.8,
+   fill = rainbow(length(wind_dir$WindGustDir)))
+```
+
+Desde el gráfico de sectores, los datos de WindGustDir están distribuidos de manera bastante uniforme, no hay anomalías ni direcciones dominantes.
+
+Ahora comprobamos si existe algún tipo de dependecia entre la variable WindGustDir y nuestra variable dependiente "RainTomorrow". Como se trata de dos variables categóricas empleamos el test de chi-cuadrado y al tener mas de 30 registros, por el Teorema del Límite Central podemos asumir que tiene una distribución normal.
+
+```{r}
+chisq.test(datos_clean$WindGustDir, datos_clean$RainTomorrow)
+```
+Como el p-value < 0.05, podemos rechazar la hipótesis nula y concluir que la variable "RainTomorrow" es decir, si llueve mañana, puede depender de la dirección del viento.
+
+
+**ANÁLISIS DE LAS RELACIÓN DE LAS VARIABLES DE NUESTRO DATASET**
+
+Definiciones:
+
+* Correlación positiva: las variables tienen una relación que se mueve en la misma dirección, por ejemplo, aumentar la variable A también aumentará la variable B si la correlación entre A y B es positiva.
+
+* Correlación negativa: las variables tienen una relación, esto indica que al aumentar la variable A disminuirá la variable B si la correlación entre A y B es negativa.
+
+* Correlación cero: sin relación lineal entre las variables, el valor de la variable B no cambia en función del valor de la variable A.
+
+**Relación entre la temperatura máxima (MaxTemp) y la evaporación (Evaporation)**
+
+Hipótesis: Existe una fuerte relación entre la temperatura máxima y la evaporación. Cuanto mayor sea la temperatura máxima, mayor será la tasa de evaporación, lo que indica una correlación positiva.
+
+```{r message= FALSE, warning=FALSE}
+# Creamos el gráfico de dispersión y añadimos la línea que mejor ajusta al gráfico de dispersión
+ggplot(datos_clean, aes(x=MaxTemp, y=Evaporation)) +
+    geom_point(col='red', size=2) +
+    geom_smooth(method=lm, se=FALSE, col='black') +
+    theme_bw()
+
+# Mostramos numéricamnete la correlación
+print(cor(datos_clean$MaxTemp, datos_clean$Evaporation))
+```
+
+Como se ve en el diagrama de dispersión y en el resultado de la correlación, podemos inferir que existe una correlación positiva entre la temperatura máxima y la evaporación. Cuanto mayor sea la temperatura máxima, mayor será el valor de la evaporación. Esto se relaciona con el razonamiento científico de que el agua se evapora más rápido cuando la temperatura es alta.
+
+**Relación entre la lluvia (Rainfall) y la evaporación (Evaporation)**
+
+Hipótesis: Existe una fuerte relación entre la Evaporación y la Precipitación. Cuanto mayor sea el valor de Evaporación, mayor será el valor de Precipitación, lo que indica una correlación positiva.
+
+```{r message= FALSE, warning=FALSE}
+# Creamos el gráfico de dispersión y añadimos la línea que mejor ajusta al gráfico de dispersión
+ggplot(datos_clean, aes(x=Rainfall, y=Evaporation)) +
+    geom_point(col='red', size=2) +
+    geom_smooth(method=lm, se=FALSE, col='black') +
+    theme_bw()
+
+# Mostramos numéricamnete la correlación
+print(cor(datos_clean$Rainfall, datos_clean$Evaporation))
+```
+
+Como podemos ver en el diagrama de dispersión y en el resultado de la correlación, existe una correlación negativa y muy baja entre la evaporación y la lluvia. Esto puede deberse al hecho de que la mayoría de los datos de lluvia están entre 0 y 30. Debido a los razonamientos científicos, esperábamos que la evaporación jugara un papel importante en la contribución a la lluvia, sin embargo, este gráfico nos muestra que puede haber otros factores que afectan lluvia fuera de la evaporación.
+
+**Relación entre la insolación (Sunshine) y temperatura a las 3 p.m (Temp3pm)**
+
+Hipótesis: Suponemos que existe una correlación positiva entre la luz solar y la temperatura a las 3:00 p. m., cuando la exposición a la luz solar es máxima.
+
+```{r message= FALSE, warning=FALSE}
+# Creamos el gráfico de dispersión y añadimos la línea que mejor ajusta al gráfico de dispersión
+ggplot(datos_clean, aes(x=Sunshine, y=Temp3pm)) +
+    geom_point(col='red', size=2) +
+    geom_smooth(method=lm, se=FALSE, col='black') +
+    theme_bw()
+
+# Mostramos numéricamnete la correlación
+print(cor(datos_clean$Sunshine, datos_clean$Temp3pm))
+```
+
+Como podemos ver en el diagrama de dispersión y en el resultado de la correlación, existe una correlación positiva entre la luz solar y la temperatura a las 3 p. m. Esto nos dice que cuanto más sol hay, más alta es la temperatura a las 3 de la tarde. Esto tiene sentido científicamente ya que la luz del sol emite calor que a su vez aumenta la temperatura atmosférica general.
+
+**Relación entre la temperatura mínima (MinTemp) y la humedad (Humidity9am)**
+
+Hipótesis: Suponemos que existe una correlación negativa entre la temperatura y la humedad. Creemos que cuanto menor sea la temperatura, mayor será el nivel de humedad.
+
+```{r message= FALSE, warning=FALSE}
+# Creamos el gráfico de dispersión y añadimos la línea que mejor ajusta al gráfico de dispersión
+ggplot(datos_clean, aes(x=MinTemp, y=Humidity9am)) +
+    geom_point(col='red', size=2) +
+    geom_smooth(method=lm, se=FALSE, col='black') +
+    theme_bw()
+
+# Mostramos numéricamnete la correlación
+print(cor(datos_clean$MinTemp, datos_clean$Humidity9am))
+```
+
+Como podemos ver en el diagrama de dispersión y en el resultado de la correlación, existe una correlación negativa entre la temperatura mínima y humedad. La relación entre la humedad y la temperatura son inversamente proporcionales. Si la temperatura aumenta, dará lugar a una disminución de la humedad relativa, por lo que el aire se volverá más seco, mientras que cuando la temperatura disminuya, el aire se humedecerá, lo que significa que la humedad relativa aumentará.
+
+
+**Relación entre la insolación (Sunshine) y la humedad a las 3pm (Humidity3pm)**
+
+Hipótesis: pensamos que tendrán una correlación negativa, ya que creemos que cuantas más horas de sol, menor sera la humedad.
+
+```{r message= FALSE, warning=FALSE}
+# Creamos el gráfico de dispersión y añadimos la línea que mejor ajusta al gráfico de dispersión
+ggplot(datos_clean, aes(x=Sunshine, y=Humidity3pm)) +
+    geom_point(col='red', size=2) +
+    geom_smooth(method=lm, se=FALSE, col='black') +
+    theme_bw()
+
+# Mostramos numéricamnete la correlación
+print(cor(datos_clean$Sunshine, datos_clean$Humidity3pm))
+```
+
+Como podemos ver en el diagrama de dispersión, existe una correlación negativa y fuerte entre la insolación y humedad. La relación entre la humedad y la insolación son inversamente proporcionales. Si la insolación aumenta, por norma general la tempertura aumenta y como antes habiamos comprobado dará lugar a una disminución de la humedad relativa, y el aire se volverá más seco, mientras que cuando la insolación disminuya, el aire se humedecerá, lo que significa que la humedad relativa aumentará.
+
+
+**TRANSFORMACIÓN DE LOS DATOS**
+
+Discretización de la variable Date
+
+```{r}
+# Iteremos por cada año y le añadimos la etiqueta correcta de la estación para dicha fecha
+
+for(i in seq(2007,2017)){
+   datos_clean[format(as.Date(datos_clean$Date, format="%Y-%m-%d"),"%Y") == i, "Season"] <-  cut(strptime(datos_clean[format(as.Date(datos_clean$Date, format="%Y-%m-%d"),"%Y") == i, "Date"], format = '%Y-%m-%d'), 
+  breaks = strptime(
+    c(as.Date(paste(as.character(i), '-01-01', sep = ""), format = '%Y-%m-%d'),
+      as.Date(paste(as.character(i), '-02-28', sep = ""), format = '%Y-%m-%d'),
+      as.Date(paste(as.character(i), '-05-31', sep = ""), format = '%Y-%m-%d'),
+      as.Date(paste(as.character(i), '-08-31', sep = ""), format = '%Y-%m-%d'),
+      as.Date(paste(as.character(i), '-11-30', sep = ""), format = '%Y-%m-%d'),
+      as.Date(paste(as.character(i+1), '-01-01', sep = ""), format = '%Y-%m-%d')), format = '%Y-%m-%d'),
+    labels = c('Verano', 'Otoño', 'Invierno', 'Primavera', 'Verano'))
+}
+
+```
+
+
+Queremos transformar las columnas de tipo character y binario a tipo numérico para poder calcular la matriz de correlación, hacer resampling y finalmente aplicar el algoritmo PCA
+
+```{r}
+# Columnas binarias
+datos_clean$RainTomorrow <- ifelse(datos_clean$RainTomorrow == 'Yes', 1,0)
+datos_clean$RainToday <- ifelse(datos_clean$RainToday == 'Yes', 1,0)
+
+# Columnas categóricas
+datos_clean$Location <- as.integer(factor(datos_clean$Location))
+datos_clean$WindDir9am <- as.integer(factor(datos_clean$WindDir9am))
+datos_clean$WindDir3pm <- as.integer(factor(datos_clean$WindDir3pm))
+datos_clean$WindGustDir <- as.integer(factor(datos_clean$WindGustDir))
+datos_clean$Season <- as.integer(datos_clean$Season)
+```
+
+**REDUCCIÓN DE LA DIMENSIONALIDAD**
+
+
+Eliminamos la columna con la fecha que no la emplearemos en nuestr0 análisis
+```{r}
+datos_final <- dplyr::select(datos_clean, -Date)
+```
+
+Comprobamos la correlación entre diferentes variables, y si encontramos algún par de variables altamente correlacionadas, descartaremos una conservando la otra.
+
+```{r fig.height=10, fig.width=15}
+# Mostramos matriz de correlación
+corrplot(cor(datos_final), type = 'lower')
+```
+
+Eliminamos las columnas Temmp9am y Temp3pm, ya que esta ambas muy correlacionadas con MinTemp y MaxTemp respactivamnete.
+
+```{r}
+# Eliminamos las variables correlacionadas
+datos_final <- datos_final %>%
+  dplyr::select(-c(Temp9am,Temp3pm))
+```
+
+Vamos a comprobar las proporción de nustra variable dependiante, ya que si la variable objetivo está descompensada corremos el riesgo de que el algoritmo de clasificación solamente aprenda sobre la clase de la que tiene más información y en consecunecia genere un modelo que simplemente ignore la clase con menor representación en el juego de datos.
+
+```{r}
+# Representación variable dependiente
+counts <- table(datos_final$RainTomorrow)
+print(prop.table(counts))
+barplot(prop.table(counts),col=c("green","red"),legend=c("No","Yes"), main = "Llueve al día siguiente")
+```
+
+Podemos comprobar que el valor 0 (No lleve mañana), representa prácticamente el 78% de los valores, por lo que vamos aplicar el algorimo de oversampling ADSYN el cual solamnete trata de replicar las observaciones de las clases minoritarias con un aprendizadje alto de dificultad por parte del modelo.
+
+```{r}
+# Elegimos una semilla pra que siempre se elija el mismo punto inicial para aplicar el algoritmo ADSYN y PCA.
+set.seed(64)
+# Variables independientes
+x <- c(seq(1,19,1))
+# Variable independiente Season
+y <- c(seq(21,21))
+
+# Aplicación de ADASYN
+datos_oversampled <- ADAS(datos_final[,c(x,y)], datos_final$RainTomorrow, K = 5)$data
+
+
+# Tranformación a numérico de la nueva variable dependiante surgida del algoritmo ADSYN
+datos_oversampled$class <- as.integer(factor(datos_oversampled$class))
+```
+
+**PCA**
+
+Aplicamos el análisis de componentes principales al dataset. Empezamos ejecutando la función prcomp().
+
+```{r}
+pca.weather <- prcomp(scale(datos_oversampled))
+summary(pca.weather)
+```
+Como se puede observar la función summary, nos devuelve la proporción de varianza aplicada al conjunto total de cada atributo. Gracias a esto, el atributo 1 explica el 0.2213 de variabilidad del total de datos; en cambio, el atributo 7 explica solo el 0.04616.
+
+A continuación, se muestra un histograma para ver el peso de cada atributo sobre el conjunto total de datos:
+
+```{r}
+# Los valores propios corresponden a la cantidad de variación explicada por cada componente principal (PC).
+ev= get_eig(pca.weather)
+ev
+```
+```{r}
+# Mostramos en forma de gráfico la varianza explicada por cada componente principal
+fviz_eig(pca.weather)
+```
+
+En este proyecto se ha decido utilizar el método de Káiser para decidir cuales de las variables obtenidas serán escogidas. Este criterio mantendrá todas aquellas variables cuya varianza sea superior a 1.
+
+```{r}
+# Comprobamos que variables explican una varianza superior a uno, lo hacemos calculado el cuadrdo de la desviación standar
+pca.weather$sdev^2
+```
+Comprobamos que solamnete las 6 primeras componentes tienen tienen una varianza suprior a 1. Tras haber aplicado el métedo de Káiser se han seleccionado las 6 primeras componentes principales.
+
+Los componentes de get_pca_var() se pueden utilizar en el diagrama de variables de la siguiente manera:
+
+```{r}
+var <- get_pca_var(pca.weather)
+var
+```
+- var$coord: coordenadas de variables para crear un diagrama de dispersión.
+- var$cos2: representa la calidad de representación de las variables al mapa de factores. Se calcula como las coordenadas al cuadrado: var.cos2 = var.coord * var.coord.
+- var$contrib: contiene las contribuciones (en porcentaje) de las variables a los componentes principales. La contribución de una variable (var) a un determinado componente principal es (en porcentaje): (var.cos2 * 100) / (cos2 total del componente).
+
+**Coordenadas de la variables**
+
+```{r}
+# Empleamos solamnente las 6 primeras componente principales
+head(var$coord[,1:6],11)
+```
+**Calidad de representación**
+
+La calidad de representación de las variables en el mapa de factores se denomina cos2 (coseno cuadrado, coordenadas cuadradas). Podemos acceder al cos2 de la siguiente manera:
+
+```{r}
+# Valores calidad de representación de cada variable en las PCs
+head(var$cos2[,1:6],11)
+```
+
+```{r message= FALSE, warning=FALSE, fig.height=10, fig.width=15}
+# Mostramos los resulatdos de las representación
+corrplot(var$cos2[,1:7], is.corre=FALSE)
+```
+
+- Un cos2 elevado indica una buena representación de la variable en el componente principal. En este caso, la variable se coloca cerca de la circunferencia del círculo de correlación.
+
+- Un cos2 bajo indica que la variable no está perfectamente representada por los PC. En este caso, la variable está cerca del centro del círculo.
+
+```{r fig.height=10, fig.width=10}
+fviz_pca_var(pca.weather,
+col.var = "cos2",
+gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+repel = TRUE
+)
+```
+Interpretando los gráficos y la información previamemte explciada podemos llegar a la conclusión que las variables mejor representadas en las PC1 son MaxTemp, Evaporation, Sunshine, Humidity9am y Humidity3pm mientras que las mejor repsentadas en las PC2 son Pressure9am y Pressure3pm.
+
+**Contribución**
+
+Las contribuciones de las variables en la contabilización de la variabilidad de un determinado componente principal se expresan en porcentaje.
+
+Las variables que están correlacionadas con PC1 (es decir, Dim.1) y PC2 (es decir, Dim.2) son las más importantes para explicar la variabilidad en el conjunto de datos.
+
+Las variables que no están correlacionadas con ningún PC o con las últimas dimensiones son variables con una contribución baja y se pueden eliminar para simplificar el análisis global.
+
+La contribución de las variables se puede extraer de la siguiente manera:
+
+```{r}
+head(var$contrib[,1:7],11)
+```
+Cuando más grande sea el valor de la contribución, más contribución habrá al componente.
+
+```{r fig.height=10, fig.width=15}
+corrplot(var$contrib[,1:6], is.cor=FALSE)
+```
+
+Las variables más importantes (que más contribuyen) se pueden resaltar a la gráfica de correlación de la siguiente manera:
+
+```{r fig.height=10, fig.width=10}
+fviz_pca_var(pca.weather, col.var = "contrib",
+gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07")
+)
+```
+
+Las variables correlacionadas positivas apuntan al mismo lado de la trama. Las variables correlacionadas negativas tienen la misma dirección pero sentidos opuestos en gráfico. Por ejemplo, vemos que la insolacion (Sunshine) y la Humedad (Humidity3pm) apuntan en sentido opuesto por tanto tienen una correlación negativa, además lo hemos visto antes cuando hemos el anális de las relaciones entre las variables. Las variables correlacionads positivamente tienen la misma dirección y sentido, como por ejemplo, vemos que la evaporavión (Evaporation) y la temperatura máxima (MaxTemp) tienen la misma dirección y sentido.
+
+Si nos centramos en nuestra varible dependiente RainTomorrow ahora denominada class, comprobamos que aporta a la PC1. Basándonos en la explicación anterior y solamnete eligiendo variables con una aportación destacable en la PC1, podemos ver que la varibles que tienen una correlación positiva con ella (una dirección y sentido  similar) son, Cloud9am, Cloud3pm y Humidity3pm y una correlación negativa (una dirección similar pero un sentido opuesto) la insolación (Sunshine).
+
+De tal manera que podríamos que un buen indicador de que sí que va a llover al día siguiente sería valores altos para la fracción del cielo tapado por nubes a las 9 de la mañana (Cloud9am),  a las 3 de tarde (Cloud3p) y la humedad a las 3 de la tarde (Humidity3pm)  y valores bajos en la insolación (Sunshine) del día anterior
+
+**CONCLUSIONES**
+
+Los datos estudiados contemplan características del tiempo atmosférico en Australia ,desde 2007 hasta 2018, como la humedad, la temperatura, la presión atmosférica, la dirección y velocidad del viento, la localización, la cantidad de lluvia, la cantida de cielo tapado por nubes y la evaporación.
+
+Tras haber revisado los datos, estos paracen bien informados pero algunas de sus variables presentan cerca del 50% de valores nulos, por lo que se ha optado por la eliminación de estos para evitar el posible caso de overfitting.
+
+Hemos observado que la temperatura media a las 9 de la mañana de unos 18 grados celsius y a las 3 de la tarde de unos 22 grados celsius. Con t.test() hemos comprobado que la temperatura media entre los dos grupos de nuestra variable dependiente (Sí o No) son significativamente diferentes, con lo que la temperatura podría influir en el si lloverá o no al dia siguiente, pero necesitaría de un estudio en profundidad.
+
+Lo mismo nos ha pasado con los datos de las variable Rainfall, Sunshine y windSpeed9am, donde con el t.test() hemos obtenido un resultado de media significativamnete diferente entre cada uno de los grupos de nuestra variable dependiente RainTomorrow. Por lo que lluvía, la insolación y la dirección del viento podria influir en la lluvia, pero pensamos que sería necesario un estudio en mayor profundiad.
+
+También hemos comprobado que no hay ninguna dirección de viento predomienante sinó que todas tienen una presencia similar, pero que existe una relación de dependencia entre la dirección del viento y si llueve al día siguiente, pero sería necesario un estudio en mayor profundiad.
+
+
+Tras haber hecho un análisis exploratorio de los datos, hemos extraido una serie de relaciones. Existe una correlación positiva entra la temperatura máxima y evaporación, entre la insolación y la temperatura a las 3 de la tarde. Hemos observado una correlación negativa entre la lluvía y la evaporación, la cual necesitaría un posterior estudio, entre la temperatura mínima y la humedad y entre la insolación y la humedad.
+
+Finalmente, hemos aplicado la técnica de componente principales y hemos concluido que un buen indicador de si va a llover al día siguiente sería unos valores altos para la fracción del cielo tapado por nubes a las 9 de la mañana, a las 3 de tarde y la humedad a las 3 de la tarde  y valores bajos para la insolación del día anterior.
+
+
+## Creación de modelos
+
+Tal y como dijimos en este proyecto se ha decido utilizar el método de Káiser para decidir cuales de las variables obtenidas serán escogidas. Este criterio mantendrá todas aquellas variables cuya varianza sea superior a 1. Tras haber aplicado el métedo de Káiser se han seleccionado las 6 primeras componentes principales.
+
+```{r}
+# Cargamos los datos transformados
+data <- read.csv('weatherAUS_1.csv')
+head(data)
+```
+Dimensiones dataframe
+
+```{r}
+dim(data)
+```
+Vemos que tenemos **7** variables y **85594** registros.
+
+6 para las PCs seleccionadas y 1 para la variable dependiente.
+
+Al tener bastantes registros, cuando aplicamos los algoritmos, tardan mucho tiempo al ejecutarse. Por lo que hemos decidido, seleccionar el 20% de los regitros para pooder aplicar los algoritmos ágilmente, ya que seguimos cumpliendo con el mínimo de 500 regstros pedido en la PR1. Aunque, perdamos información, como la idea de la práctica es mostrar el aprendizaje adquirido sobre la asignatura, a la hora de aplicar modelos, y no conseguir los mejores resultados, pensamos que no afectará en el desarrollo de la práctica.
+
+```{r}
+# Denomtamos la semilla, para seleccionar siempre el mismo subset de registros
+set.seed(24)
+
+# Seleccionamos el 20% del dataset original
+data_sample <- data %>%
+  sample_frac(0.2)
+
+# comprobamos que la variiable dependiente no se ha desbalanceado
+counts <- table(data_sample$class)
+print(prop.table(counts))
+```
+Tenemos uns 50.5% de una categoria y un 49.5% de la otra por lo que no hemos sufrido ningún desbalanceamiento con la variable dependiente.
+
+1. Aplicar un modelo **no supervisado** y basado en el concepto de distancia, sobre el juego de datos.
+
+Eliminamos nuestra variable dependiente del dataframe, para aplicar los métodos no supervisados
+
+```{r}
+unsupervised_data <- data_sample %>%
+  dplyr::select(-class)
+```
+
+Vamos a emplear un algoritmo de agrupación jerárquica de tipo aglomerativo, es decir, partiendo de una fragmentación completa de los datos, estos se van fusionando hasta conseguir una situación contraria, es decir, todos los datos se unen en un solo grupo.
+
+Para realizar este método es muy importante escalar los valores de las variables, ya que la clasificación de los datos en un grupo u otro se hace midiendo las distancias entre ellos. Por tanto, si cada columna está en una escala diferente el método no obtendría el resultado correcto. Sin embargo, como empleamos los resulatdos del PCA que ya estan escalados no hará falta escalarlos otra vez.
+
+Primero de todo computamos la matriz de distancia Euclidiana, para tener la distancia entre los puntos.
+
+Calculamos las matriz con la distancia euclidiana entre los registros
+
+```{r}
+# Calculamos da distancia euclidiana, ya que empleamos loo datos escalado, ya que provienen del PCA
+dist_mat <- cluster::daisy(unsupervised_data, metric = "euclidean")
+```
+
+En este caso empleamos el Enlace completo o complete linkage, donde tomaremos como criterio la distancia máxima entre los elementos del grupo.
+
+```{r}
+# Aplicamos el algoritmo
+hc_complete <- hclust(dist_mat, method = 'complete')
+```
+
+Como sabemos que tenemos dos grupos en nuestra variable dependiente vamos a dividir el dendograama en dos clústers
+
+```{r}
+hc_complete_cut <- cutree(hc_complete, 2)
+```
+
+Mostramos el dendograma dividido para dos grupos
+
+```{r}
+plot(hc_complete)
+rect.hclust(hc_complete, k = 2, border=7:6)
+```
+Viendo el dendograma ya podemos intuir quee los resultados no serán buenos, ya que da la sensación de solamnente ha sido capaz de difereniciar un grupo.
+
+Vamos a comprobarlo, para ello:
+
+Comparamos con los datos originales:
+
+```{r}
+table(hc_complete_cut, data_sample$class)
+```
+
+Mostramos los resultados en porcentaje, obtenemos:
+
+```{r}
+prop.table(table(hc_complete_cut, data_sample$class))
+```
+Comprobamos que  prácticamnete todos los registros los ha clasificado como 1, en consecuencia se ha acertado el 50.4%, mientas que los de tipo 2, prácticamete no se ha acertado ninguno 0.0009%. Por tanto, lo que podemos ver es que este algoritmo solamente ha sido capaz de difrenciar un grupo, no ha podido descubrir que tenemos dos grupos de datos en nuestro dataset. Así que, será necesario buscar algún otro tipo de enfoque o de algoritmo que no reporte mejores resultados.
+
+2. Aplicar de nuevo el modelo anterior, pero usando una **métrica de distancia diferente** y comparar los resultados.
+
+Vamos aplicar el mismo algorimto que en apartado anterior, pero en este caso empleamos el Enlace medio o average linkage, donde tomaremos como criterio la distancia media entre los elementos del grupo
+
+```{r}
+# Aplicamos el algoritmo
+hc_average <- hclust(dist_mat, method = 'average')
+```
+
+Como sabemos que tenemos grupos en nustra variable dependiente vamos a dividir el dendograama en dos clústers
+
+```{r}
+hc_average_cut <- cutree(hc_average, 2)
+```
+
+Mostramos el dendograma dividido para dos grupos
+
+```{r}
+plot(hc_average)
+rect.hclust(hc_average, k = 2, border=7:6)
+```
+Viendo el dendograma ya podemos intuir quee los resultados no serán buenos, ya que da la sensación de solamnente ha sido capaz de difereniciar un grupo.
+
+Vamos a comprobarlo, para ello:
+
+Comparamos con los datos originales:
+
+```{r}
+table(hc_average_cut, data_sample$class)
+```
+Mostramos los resultados en porcentaje, obtenemos:
+
+```{r}
+prop.table(table(hc_average_cut, data_sample$class))
+```
+
+Igual que en el apartado anterior nos damos cuenta que a pesar de haber cambiado la métrica de distancia los resultados son muy similares. No ha sido capaz de descubrir que nuestros datos tenian dos grupos diferenciados, ya que como clase 2, solamente hay clasificados dos registros y uno de ellos incorrectamnete.
+
+Como ha clasificado a todos los registros como 1, de la categoría 1 ha clasificado correctamente el 50.4% y de la clase 2 el 0% aproximadamente, por lo que los resultados son prácticamente iguales a los del apartado anterior. Ambos se asemejan al azar.
+
+Comprobamos que en ambos casos no se ha sido capaz de identificar que hay dos grupos de datos. Solamente se ha identifacado un grupo, de tal manera que ambos resultados son muy similares. Aunque vemos que el resultado es un poco mejor para el algoritmo que hemos emleado el enlace completo, las diferencias entre los resultados no paracen significativas, ya que en ambos casos, de la clase dos se han acertado paracticamnete el 0% de los registros.
+
+Como conclusión podemos extraer, que para este dataset, debemos de buscar otro tipo de algoritmo que no se el jerárquico aglomerativo, ya que con este obtenemos muy malos resultados.
+
+3. Se aplican lo algoritmos **DBSCAN y OPTICS**, se prueban con diferentes valores de eps y se comparan los resultados con los métodos anteriores.
+
+```{r}
+# Creamos el vector que contendrá los resultados del índice silhouette
+sil_DBSCAN <- rep(0,50)
+```
+
+
+Iteramos y probamos diferente valores de eps. Asimismo, vamos a graficar y mostrar los grupos que hemos conseguido para cada valor de eps, su valor obtenido para el índice silhouette y la proporción de datos clasificados correctamente.
+
+```{r}
+# Probamos diferentes valores de eps
+for (i in seq(5,20,5)) {
+  
+  # Con minPts indicamos los puntos vecinos y con eps la distancia máxima que debe estar el punto para introducirlo en el cluster
+  res <- optics(unsupervised_data, minPts= 5, eps = i)
+  
+  # En este caso determinamo que aquellos puntos que estén a mas de 2 de distancia los denominamos outliers
+  res1 <- extractDBSCAN(res, eps_cl = 1.7)
+  
+  cat(paste(c('eps', i)))
+  
+  # Mostramos el reachability plot
+  plot(res1)
+  
+  # Mostramos las areas creadas para cada especie
+  hullplot(unsupervised_data, res1)
+  
+  # Calculamos el valor silhouette para cada valor de eps y lo añadimos a los resultados
+  y_cluster <- res1$cluster
+  sk <- silhouette(y_cluster, dist_mat)
+  sil_DBSCAN[i] <- mean(sk[,3])
+  
+  cat(paste('Con el valor', i, 'el valor de silhouette es', round(mean(sk[,3]), digits = 2), '\n'))
+  
+  # Creamos una columna para cada resultado de eps
+  unsupervised_data[,paste('DBSCAN',i, sep="_")] <-  res1$cluster
+  
+  # Utilizamos la exactitud(correctas/total), como medida de los bueno que es el agrupamiento, multilpicando por 100 obtenemos el porcentaje de registros clasificados de manera correcta, eliminaos los registros que ha detectado como outliers [res1$cluster != 0]
+  correctas <- mean(data_sample$class[res1$cluster != 0] == res1$cluster[res1$cluster != 0])
+  
+  cat(paste(c('Con el valor', i, 'de eps hemos clasificados correctamnete', round(correctas*100, digits = 2), '%')))
+  
+  # Mostramos la clasificación del algoritmo DBSCAN
+  plot(unsupervised_data[c(1,2)], col=res1$cluster, main="DBSCAN")
+  
+  # Mostramos la valores reales
+  plot(unsupervised_data[c(1,2)], col=as.factor(data_sample$class), main="Clasificación real")
+}
+```
+
+Un paso muy interesante del algoritmo es la generación de un diagrama de alcanzabilidad o reachability plot, en el que se aprecia de una forma visual la distancia de alcanzabilidad de cada punto. En estos, Los valles representan clusters (cuanto más profundo es el valle, más denso es el cluster), mientras que las cimas indican los puntos que están entre las agrupaciones (estos puntos son cadidatos a ser considerardos outliers). Si observamos los diagrams de alcanzabiliad nos damos cuenta que no tenemos valles y cimas sino que solamente observamos un valle, así que el algoritmo solamnete es capaz de diferenciar un grupo.
+
+Si nos centramos en el porcentaje de registrso clasificados correctamnete, vemos que todos los valores de eps, obtienen el mismo resultado 50.66%. También aplicamos el método Silhouette, el cual proporciona un valor entre -1.0 y 1.0 que indica lo bien o mal que está agrupado dicho punto en su grupo. Los valores cercanos a 1.0 indican que la muestra está en el grupo correcto. Los valores cercanos a –1.0 indican que la muestra está en el grupo incorrecto. Por tanto, cuanto mayor es el valor, mejor agrupados están los datos. Observamos que todos los valores eps obtienen un silhouette = 0.34, un valor bastante bajo, de tal manera que podemos concluir que no están bien agrupados. Así que, teniendo en consideración estos datos podemos intuir que el algoritmo no ha funcionado de una manera correcta para este grupo de datos.
+
+Tal como habíamos comentado, si analizamos lo gráficos (DBSCAN) vemos que en todos los casos, solamente se ha sido capaz de diferenciar un grupo de datos y no dos como teníamos en nustro dataset, por lo que este método no parece el mejor para este dataset.
+
+También hemos graficado los datos reales y nos hemos percatado, de que todos los datos estám muy juntos. Por lo que, para que estos algoritmos no supervisados basados en las distancias(métodos aglomerativos,  DBSCAN y OPTICS) les es muy dificil clasificar correctamnete los resgistros, es posible que está sea la causa de los malos resultados.
+
+En referencia a los tres apartados, vemos que los resulatados son malos y muy similares en todos los casos tanto con los métodos aglomerativos como con DBSCAN y OPTICS. De tal manera que, aunque el resultado de DBSACN es algo mejor, 50.66% frente al 50.4% del método aglomerativo, por lo malos y similares resultados obtenidos por los tres métodos aplicados no podemos conluir que alguno de ellos tenga un mejor comportanmineto con respesto a los demás. 
+
+Como conlcusión podríamos comentar que, como con todos los modelos modelos hemos obtenidos malos resultados y similares, es posible que debamos buscar algún algoritmo diferente a estos modelos insupervisados basados en la distancia, para ver si su mejoran los resultados.
+
+4. Aplicar un modelo de generación de reglas a partir de **árboles de decisión** ajustando las diferentes opciones de creación como sin y con opciones de poda o boosting y comparar los resultados.
+
+```{r}
+data_sample$class <- ifelse(data_sample$class == 1, 'No', 'Yes')
+```
+
+PREPARACIÓN DE LOS DATOS PARA EL MODELO
+
+Para la futura evaluación del árbol de decisión, es necesario dividir el conjunto de datos en un conjunto de entrenamiento y un conjunto de prueba. El conjunto de entrenamiento es el subconjunto del conjunto original de datos utilizado para construir un primer modelo; y el conjunto de prueba, el subconjunto del conjunto original de datos utilizado para evaluar la calidad del modelo.
+
+Lo más correcto será utilizar un conjunto de datos diferente del que utilizamos para construir el árbol, es decir, un conjunto diferente del de entrenamiento. No hay ninguna proporción fijada con respecto al número relativo de componentes de cada subconjunto, pero la más utilizada acostumbra a ser 2/3 para el conjunto de entrenamiento y 1/3, para el conjunto de prueba.
+
+De esta forma, tendremos un conjunto de datos para el entrenamiento y uno para la validación.
+
+```{r}
+set.seed(666)
+# Variables independientes
+X <- data_sample[,1:6]
+# Variable dependientes
+y <- data_sample[,7]
+```
+
+De forma dinámica podemos definir una forma de separar los datos en función de un parámetro, en este caso del “split_prop”. Podemos crear un rango utilizando “split_prop”.
+
+```{r}
+split_prop <- 3 
+indexes = sample(1:nrow(data_sample), size=floor(((split_prop-1)/split_prop)*nrow(data_sample)))
+
+# Datos entrenamaniemto del modelo
+trainX<-X[indexes,]
+trainy<-y[indexes]
+
+# Datos evaluación del modelo
+testX<-X[-indexes,]
+testy<-y[-indexes]
+```
+
+Después de una extracción aleatoria de casos es altamente recomendable efectuar un análisis de datos mínimo para asegurarnos de no obtener clasificadores sesgados por los valores que contiene cada muestra. En este caso, verificaremos que la proporciónde clases es constante en los dos conjuntos:
+
+```{r}
+summary(trainX);summary(trainy);table(trainy)
+```
+
+```{r}
+summary(testX);summary(testy);table(testy)
+```
+Verificamos que no hay diferencias importantes en las proporciones de cada una de las clases que puedan sesgar las conclusiones.
+
+**CREACIÓN DEL MODELO, CALIDAD DEL MODELO Y EXTRACCIÓN DE REGLAS**
+
+Primero de todos vamos a probar con un árbol de regresión sin podar ni aplicar boosting.
+
+**Entrenamiento del árbol**
+
+```{r}
+trainy = as.factor(trainy)
+model <- C50::C5.0(trainX, trainy, rules=TRUE)
+summary(model)
+```
+Cuando aplicamos el árbol de clasificación sin poda, hace que el árbol resultante pueda tener muchísimas ramas como es el caso, de forma que no es fácil extraer un conjunto de reglas que proporcionen una información fácil de interpretar.
+
+En este caso tenemos más de 40 normas de manera que hace casi imposible que podamos interpretar correctamte todas las normas de una manera conjunta.
+
+Extraemos las 3 reglas más significativas para cada una de las clases.
+
+Rule 1: PC1 > 0.2156888, PC2 > 0.1880979, PC3 <= -1.610078 ->  No llueve al dia siguiente. Validez: 96.6%
+
+Rule 2: PC1 > 4.529339 ->  No llueve al dia siguiente. Validez: 96.3%
+
+Rule 3: PC1 > -2.164939, PC2 > 0.9977986, PC5 > 0.9242085 ->  No llueve al dia siguiente. Validez: 96%
+
+Rule 33: PC1 <= -3.655172, PC2 <= 3.050137, PC4 > -1.092024 -> Llueve al dia siguiente. Validez: 94.6%
+	
+Rule 34: PC1 <= 2.787085, PC2 <= -1.056363, PC5 <= 1.248106, PC6 <= -1.170035 -> Llueve al dia siguiente. Validez: 93.2%
+
+Rule 35: PC1 <= 4.529339, PC2 <= -3.400175-> Llueve al dia siguiente. Validez: 92.3%
+	
+Comprobando las reglas más importantes para cada una de las clases podemos percibir que para un registro que al día siguiente no vaya a llover, los valores de PC1 > 0 y PC2 > 0, es decir, cuando no va llover al día siguiente PC1 y PC2 son positivos y cuando va llover negativos. También, tenemos resultados sobre las PC4, PC5 y PC6, sin embargo los separados en diferentes reglas, cosa que las hace más difíciles de interpretar.
+
+Además, llegar a tener un árbol con todos los nodos terminales puede comportar que el modelo resultante esté sobreentrenado (overfitting, en inglés). El problema es que el árbol creado será muy específico para el conjunto de entrenamiento y seguramente cometerá errores para datos nuevos. Eso sí, obtenemos un error del 16.4%, un buen resultado.
+
+Asimismo, al tener que crear tantas reglas necesitará de bastante computación.
+
+Mostramos el árbol
+
+```{r}
+# Gráfico del árbol
+model <- C50::C5.0(trainX, trainy)
+plot(model)
+```
+
+Cuando graficamos el árbol, este tiene tantas ramas que es imposible de visualizar e interpretar nada.
+
+**Validación del árbol**
+
+```{r}
+predicted_model <- predict( model, testX, type="class" )
+# Denotamos como positive, los registros que tenemos impagos
+confusionMatrix(data = predicted_model, reference = as.factor(testy), positive = 'Yes')
+```
+Como podemos ver en el apartado Accuracy, que hace referencia a la exactitud, es decir, el número de registros clasificados correctamente, es del 80.5% y por lo tanto, un error del 19.5%. Este valor es un mayor al que se obtiene en la fase de entrenamiento, lo cual era de esperar. Analizando los dos tipos de error nos damos cuenta que el que nos aporta información relevante para este caso, es el error de tipo II, ya que será el que nos permitirá conocer el porcentaje de días que va a llover. De cara al dataset, este modelo tiene una sensibilad del 83.87%. Es decir, somos capaces de predecir el 83.87% de los días que va a llover, el cual es un buen dato.
+
+
+En segundo lugar vamos a probar un modelo con poda, pero sin boosting
+
+**Entrenamiento del árbol**
+
+```{r}
+trainy = as.factor(trainy)
+# En cada nodo terminal, como mínimo debe haber 500 registros
+model_pruning <- C50::C5.0(trainX, trainy, rules=TRUE, control = C5.0Control(minCases=500))
+summary(model_pruning)
+```
+
+Extraemos las 6 reglas que nos aporta el árbol.
+
+Rule 1: PC1 > 2.436041 ->  No llueve al dia siguiente. Validez: 88.5%
+
+Rule 2: PC1 > 0.2156888, PC2 > -0.8202851  ->  No llueve al dia siguiente. Validez: 86.2%
+
+Rule 3: PC2 > 0.9977986 ->  No llueve al dia siguiente. Validez: 75.5%
+
+Rule 4: PC1 <= -1.713371, PC2 <= 2.192885 -> Llueve al dia siguiente. Validez: 85.2%
+	
+Rule 5: PC1 <= 2.436041, PC2 <= -0.8202851  -> Llueve al dia siguiente. Validez: 80%
+
+Rule 6: PC1 <= 0.2156888 -> Llueve al dia siguiente. Validez: 67.8%
+
+Lo que podemos comprobar es que estas reglas tienen menos validez que las entriores, pero podemos comprobar que solamenente se hace uso de las PC1 y PC2, las más importantes, facilitando su interpretación y que las conclusiones que llegamos son basatante similiares a las anteriores. Por lo que, también podríamos decir que para un registro que al día siguiente no vaya a llover, los valores de PC1 > 0 y PC2 > 0, es decir, cuando no va llover al día siguiente PC1 y PC2 son positivos y cuando va llover negativos, independientemente del resto de PCs.
+
+Observando los resultados, comprobamos que solamnete tenemos 6 reglas, las cuales se haven mucho más comprensibles que las del modelo sin poda. Si observamos el porcentaje de error es del 21.6%, el cual es un 5%  mayor que el del método anterior, lo cual era de esperar, pues no estamos diviendo el árbol lo máximo posible. Sin embargo, estamos ganando en explicabilad, que es punto muy importante a la hora de aplicar un modelo, ya que si aplicamos un modelo que obtiene muy buenos resultados pero no los sabemos interpretar, el trabajo carece de sentido.
+
+También al no tener que dividir el árbol completamente estamos estamos reduciendo el coste computacional.
+
+Graficamos el árbol
+
+```{r}
+model_pruning <- C50::C5.0(trainX, trainy, control = C5.0Control(minCases=500))
+plot(model_pruning)
+```
+
+Comprobamos como este árbol si que es posible de comprender e interpretar.
+
+**Validación del árbol**
+
+```{r}
+predicted_model <- predict( model_pruning, testX, type="class" )
+# Denotamos como positive, los registros que tenemos impagos
+confusionMatrix(data = predicted_model, reference = as.factor(testy), positive = 'Yes')
+```
+Como podemos ver en el apartado Accuracy, que hace referencia a la exactitud, es decir, el número de registros clasificados correctamente, es del 77.8% y por lo tanto, un error del 22.2%, un poco más alto que en la fase de entrenamineto. Ambos valores son un poco peores que los conseguidos con el modelo sin poda, sin embargo podemos apreciar que el árbol creado es menos específico, se adapta mejor a datos nuevos, ya que el error ha aumentado menos que en caso anterior. Pues en el primer caso aumentó un 3% y en este caso el 0.6%. Analizando los dos tipos de error nos damos cuenta que el que nos aporta información relevante para este caso es el error de tipo II, ya que será el que nos permitirá conocer lo de días que va a llover. De cara al dataset, este modelo tiene una sensibilad del 81.37%. Es decir, somos capaces de predecir el 81.37% de los días que va a llover, el cual es un buen dato.
+
+Ahora vamos a crear un arbol en el que combinamos el booting y la poda
+
+Boosting
+
+El Boosting se basa en la noción de que al combinar una serie de learners con bajo rendimiento, se puede crear un equipo que sea mucho más fuerte que cualquiera de los learners solos. Cada uno de los modelos tiene un conjunto único de fortalezas y debilidades y pueden ser mejores o peores para resolver ciertos problemas. El uso de una combinación de varios learners con fortalezas y debilidades complementarias puede, por lo tanto, mejorar dramáticamente la precisión de un clasificador. La función C5.0 () facilita agregar el boosting a nuestro árbol de decisión C5.0. Simplemente necesitamos agregar un parámetro de prueba adicional que indique el número de árboles de decisión separados para usar en el equipo de boosting.
+
+**Entrenamiento del árbol**
+
+```{r}
+# El núemro de árboles lo indicamos con trials
+modelo_boosting <- C50::C5.0(trainX, trainy, trials = 5, rules=TRUE, control = C5.0Control(minCases = 500))
+summary(modelo_boosting)
+```
+
+Analizamos las 6 reglas más significativas entre todos los árboles.
+
+Rule 0/1: PC1 > 2.436041 ->  No llueve al dia siguiente. Validez: 88.5%
+
+Rule 2/1: PC2 > 3.030732  ->  No llueve al dia siguiente. Validez: 88.7%
+
+Rule 0/2: PC2 > 0.9977986 ->  No llueve al dia siguiente. Validez: 86.2%
+
+Rule 3/3: PC1 <= -1.664893, PC2 <= 1.834343 -> Llueve al dia siguiente. Validez: 86.3%
+	
+Rule 0/4: PC1 <= -1.713371, PC2 <= 2.192885  -> Llueve al dia siguiente. Validez: 85.2%
+
+Rule 0/5: PC1 <= 2.436041, PC2 <= -0.8202851 -> Llueve al dia siguiente. Validez: 80%
+
+
+A las conclusiones que llegamos son basatante similiares a las que hemos llegado en los casos anteriores. Por lo que también podríamos decir que para un registro que al día siguiente no vaya a llover, los valores de PC1 > 0 y PC2 > 0, es decir, cunado no va llover al día siguiente PC1 y PC2 son positivos y cuando va llover negativos.
+
+Como en cada árbol, se aplica poda, solmente se hace uso de las PCs más importantes, PC1 y PC2, pero gracias a que se realiza el boosting la validez no se reduce como en el caso anterior. Por lo tanto, es posible que este resultado sea el más interesante de analizar, pues nos muestra una reglas con validez alta con las PCs que más varianza explican (PC1 y PC2), haciendo más sencilla la interpretación.
+
+Observando los resultados, comprobamos que solamnete tenemos 6 reglas o menos por cada árbol, lo que lo hace más comprensible que el árbol sin poda y sin boosting, pero menos comprensible que el árbol con poda y sin boosting, ya que deberemos de realizar un anális de las reglas de todos los árboles. Si observamos el porcentaje de error es del 20.7%, el cual es un 4%  mayor que el del método sin poda ni boosting, pero un 1% mejor que el árbol con poda solo, esto era de esperar. Pues, aunque no llegamos a ramificar el árbol todo los posible, al combinar el resulatdo de varios árboles el resulatdo final mejora. Esto también implicará un mayor costo computacional el cual deberemos de valorar si vale la pena.
+
+Por tanto, con este modelo, estamos ganando en calidad de ajuste del modelo pero perdiendo comprensibilidad en comparación con el árbol con poda y sin boosting. En comparación el arbol sin poda y boosting, estamos perdiendo en calidad de ajuste pero ganando en comprensibilidad.
+
+Mostramos el árbol
+
+```{r}
+# El núemro de árboles lo indicamos con trials
+modelo_boosting <- C50::C5.0(trainX, trainy, trials = 5, control = C5.0Control(minCases = 500))
+plot(modelo_boosting)
+```
+Comprobamos que el árbol se entiende de manera más sencilla.
+
+**Validación del árbol**
+
+```{r}
+predicted_model_boosting <- predict( modelo_boosting, testX, type="class" )
+confusionMatrix(data = predicted_model_boosting, reference = as.factor(testy), positive = 'Yes')
+```
+
+Como podemos ver en el apartado Accuracy, que hace referencia a la exactitud, es decir, el número de registros clasificados correctamente, es del 78.43% y por lo tanto, un error del 21.57%. Ambos valores son un poco peores que los conseguidos con el modelo sin poda y sin boosting (80.5%), pero un poco mejores que los que obtenemos con el modelo con poda y sin boosting (77.8%). El valor del error es un poco mayor al que se obtiene en la fase de entrenamiento, lo cual era de esperar. Analizando los dos tipos de error nos damos cuenta que el que nos aporta información relevante para este caso es el error de tipo II, ya que será el que nos permitirá conocer lo de días que va a llover. De cara al dataset, este modelo tiene una sensibilad del 80.81%. Es decir, somos capaces de predecir el 80.81% de los días que va a llover, el cual es un buen dato.
+
+En resumen:
+
+En primer lugar, los mejores resultados los obtenemos con el árbol que no le aplicamos poda ni boosting, sin embargo este no se puede interpretar correctamente debido al gran número de reglas que tiene. Si un modelo obtiene muy buenos resultados, pero no somos capaces de extrarer conclusiones comprensibles, nuestro trabajo carece de sentido, ya que el modelo no tendrá aplicabilidad en el futuro.  Además, al tener que dividir el arbol hasta los nodos terminales, implicará un mayor coste computacional.
+
+En segundo lugar, tenemos el árbol que tiene poda pero no boosting, que ha sido el que peores resulatdos ha consiguido, sin embargo es el más fácil de interpretar, ya que solamnete crea 6 reglas, y el que menor coste computacional necesita.
+
+En tercer lugar, hemos creado un árbol con poda y boosting, el cual ha obtenido una calidad de resultado entre los otros dos modelos. Sin embargo, este tiene una interpretabilidad más dificil que la del árbol con poda y sin boosting, ya que, se tendría que analizar las reglas de cada arbol, pero más sencilla que la del árbol sin poda y boosting. Si quisiereamos mejorar los resultados podríamos aumnetar el número de arboles empleado, pero estarímos sacrificando la interpretabiliadad que es un punto crucial a la hora de crear un modelo y aumentando el coste computacional.
+
+Podríamos concluir que, para crear nuestro árbol final deberemos de tener valorar a que apartado le damos más imporancia si a la interpretabilidad, calidad de resultados o coste computacional y apartir de ahí elegir un modelo u otro.
+
+
+5. Aplicar un **modelo supervisado** diferente al anterior a elegir de los vistos en el material docente.Comparar el resultado con el modelo generado anterior.
+
+Emplearemos el modelo knn del inglés (k nearest neighbours). El funcionamiento del método es muy sencillo. Para cada muestra nueva por clasificar, se calcula la distancia con todas las muestras de entrenamiento y se seleccionan las k muestras más cercanas. La etiqueta de la muestra nueva se determina como la etiqueta mayoritaria entre sus k muestras vecinas más cercanas.
+
+Vamos a seguir un enfoque simple para seleccionar k, este establece que [k = sqrt (N)/2](https://stackoverflow.com/questions/11568897/value-of-k-in-k-nearest-neighbor-algorithm), donde N = número de puntos de datos en los datos de entrenamiento. Trataremos que el valor de k impar, de modo que no haya empate entre elegir una clase.
+
+```{r}
+sqrt(length(trainy))/2
+```
+Siguiendo el criterio anterior elegiremos 53 como valor óptimo de k.
+
+Creamos el modelo, además este será el resultado del algoritmo, pues una de sus principales características es que no incluye fase de entrenamiento. Por lo tanto, no se genera un modelo que luego se usará para clasificar las muestras nuevas.
+
+```{r}
+set.seed(666)
+knn_model <- knn(train = trainX, test = testX, cl=trainy, k=53)
+```
+
+Comprobamos los resultados del modelo
+
+```{r}
+confusionMatrix(data = knn_model, reference = as.factor(testy), positive = 'Yes')
+```
+
+Como podemos ver en el apartado Accuracy, que hace referencia a la exactitud, es decir, el número de registros clasificados correctamente, es del 82.02% y por lo tanto, un error del 17.98%. Ambos valores son un poco mejores que cualquiera de los tres árboles anteriores. Analizando los dos tipos de error nos damos cuenta que el que nos aporta información relevante para este caso es el error de tipo II, ya que será el que nos permitirá conocer lo de días que va a llover. De cara al dataset, este modelo tiene una sensibilad del 86.83%. Es decir, somos capaces de predecir el 86.83% de los días que va a llover, el cual es el mejor dato obtenido hasta ahora.
+
+Comparando estos resultados con los del apartado anterior, podemos observar que son mejores, de hecho el mejor resultado anterior para la Accuracy era del 80.5%, mientras que en este caso se ha consguido el 82.02%. Además, se ha mejardo de una manera bastante considerable en la sensibilidad, punto muy imporantante para este modelo, ya que es el dato que nos dice, el porcentaje de días que va llover.
+
+Sin embargo, su principal desventaja es la lentitud de la fase de predicción, puesto que es necesario calcular la distancia de la nueva muestra con respecto a todas las muestras de entrenamiento. Además, no crea ninguna regla, como lo hacén los árboles, por lo que hace que la comprensión del resultado sea más difícil.
+	
+6. Identificar eventuales **limitaciones** del dataset seleccionado y **analizar los riesgos** para el caso de uso.
+
+Limitaciones:
+
+Como hemos podido comprobar nuestros datos están muy agrupados, por lo que para los modelos no supervisados basados en las distancias, este dataset tiene serias limitaciones de obtener buenos resultados con ellos.
+
+De tal manera, si queremos obtener un buen resultado deberíamos de apostar otro tipo de algoritmos, como pueden ser los supervisados, los cuales han obtenido unos resultados bastante buenos, sobre todo si los comparamos con los de los algoritmos no supervisados.
+
+En referencia a los algoritmos supervisados, tenemos la limitación de que al haber aplicado el PCA. En los árboles, la comprensión de las reglas se hace mucho más difícil, ya que, para comprender como se comportan las variables originales, deberíamos de hacer un estudio de cómo afecta cada variable a las PCs seleccionadas. 
+
+Riesgos:
+
+Si apostamos por métodos no supervisados que necesitan de calcular la distancia entre todos los puntos, si tenemos muchos registros, este cálculo se puede hacer largo e incrementar de manera importante el coste computacional.
+
+Este punto es muy importante, pues aunque tengamos un modelo con muchísima información, el cuál seguramente nos aporte unas  buenas métricas. Si nuestro infraestructura informática no puede hacer frente a esta cantidad de datos, es posible que el modelo no pueda ser ejecutado en el tiempo necesario o simplemente que no los podamos ejecutar.
+También, lo podríamos enfocar desde el punto de vista opuesto, por ejemplo, si disminuimos el número de datos el coste computacional se verá reducido. Sin embargo, los resultados se verán afectado y por ende, las métricas serán peores. De tal manera que, será muy importante hacer un balance entre el coste computacional que podemos asumir y las métricas que aceptaremos.
+
+Además, en los modelos no supervisados basados en las distancias corremos el riesgo de que tengamos los datos muy agrupados y obtener malos resultados, tal y como nos ha sucedido.
+
+Si nos centramos en los modelos supervisados, si hacemos referencia a los árboles decisionales, corremos diferentes riesgos en función de que método de aplicación del algoritmo seleccionemos. 
+
+Por ejemplo, hemos comprobado que en los árboles de decisión que no empleamos poda y boosting, obtenemos un buen resultado pero muy difícil de interpretar e incluso es posible que se produzca overfittig, y que además comporta un mayor coste computacional. Sin embargo, si aplicamos poda al árbol anterior, corremos el riesgo de obtener un peor resultado en cuanto a métricas, pero mucho mejor en cuanto a interpretabilidad, y con un menor coste computacional. 
+
+Por lo tanto, será muy importante saber cuál es el objetivo de nuestros modelos y el coste computacional que podemos hacer frente, para seleccionar un método u otro.
+Además, si trabajamos con un dataset resultado de haber aplicado PCA al datset original, la interpretabilidad de las reglas será bastante más complicada, por lo que corremos el riesgo de realizar una mala interpretación de estas y no comprender las reglas obtenidas, teniendo en consideración las variables reales.
+
+Finalmente, tenemos el algoritmo knn, que es el que mejor resultados obtiene, pero al necesitar calcular todas las distancias entre los puntos es posible que tenga un alto coste computacional y sea lento en ejecutarse. Por tanto, tal y como comentábamos, será muy importante tener en cuenta el coste computacional antes de implementar un modelo.
+
+
+
+**Bibligrafía**
+1. ADASYN function - RDocumentation [Internet]. Rdocumentation.org. 2022 [cited 1 May 2022]. Available from: https://www.rdocumentation.org/packages/smotefamily/versions/1.3.1/topics/ADASYN
+2. [Internet]. 2022 [cited 1 May 2022]. Available from: http://www.bom.gov.au/climate/dwo/IDCJDW0000.shtml
+3. Taiyun Wei V. An Introduction to corrplot Package [Internet]. Cran.r-project.org. 2022 [cited 1 May 2022]. Available from: https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html
+4. Holtz Y. Pie Chart | the R Graph Gallery [Internet]. R-graph-gallery.com. 2022 [cited 1 May 2022]. Available from: https://r-graph-gallery.com/pie-plot.html
+5. RPubs - kNN(k-Nearest Neighbour) Algorithm in R [Internet]. Rpubs.com. 2022 [cited 3 June 2022]. Available from: https://rpubs.com/kskand/316172
+6. algorithm V, P C, Lathwal A. Value of k in k nearest neighbor algorithm [Internet]. Stack Overflow. 2022 [cited 3 June 2022]. Available from: https://stackoverflow.com/questions/11568897/value-of-k-in-k-nearest-neighbor-algorithm
+7. cutree function - RDocumentation [Internet]. Rdocumentation.org. 2022 [cited 3 June 2022]. Available from: https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/cutree
+8. hclust function - RDocumentation [Internet]. Rdocumentation.org. 2022 [cited 3 June 2022]. Available from: https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/hclust
+
+
